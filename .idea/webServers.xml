@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="4b48be9c-8027-47e8-9c32-6b4f505dbbb6" name="determ" url="http://141.28.60.12">
+        <fileTransfer host="141.28.60.12" port="12345" rootFolder="/home/determinants" accessType="SFTP">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" />
+          </advancedOptions>
+          <option name="port" value="12345" />
+        </fileTransfer>
+      </webServer>
+    </option>
+  </component>
+</project>
