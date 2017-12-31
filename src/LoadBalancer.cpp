@@ -14,9 +14,9 @@ LoadBalancer::LoadBalancer(cl::Device *devicePtr) {
 void LoadBalancer::setOrder(int order) {
     this->order = order;
     this->matrixSize = this->order*this->order;
-    int tmp = this->allocateableMemory/sizeof(long)*this->matrixSize;
+    long tmp = this->allocateableMemory/(sizeof(long)*this->matrixSize);
     if(tmp*sizeof(long)>this->allocateableMemory-sizeof(long)*this->matrixSize*tmp){
-        tmp = (this->allocateableMemory-tmp*sizeof(long))/sizeof(long)*this->matrixSize;
+        tmp = (this->allocateableMemory-tmp*sizeof(long))/(sizeof(long)*this->matrixSize);
     }
     this->maxSemplesInQueue = tmp;
 }

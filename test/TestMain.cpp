@@ -225,12 +225,13 @@ void writeToFile(std::string file){
 }
 
 void testTimes(){
-    std::ostringstream stream;
-
-    for(int i = 30; i <= 130 ; i+=10){
+    std::ofstream stream;
+    stream.open (outfile);
+    Controller controller(order);
+    for(int i = 10; i <= 130 ; i+=10){
         order = i;
-        Controller controller(order);
-        for(int j = 100; j <= 1000000; j*=10){
+        controller.initOrder(order);
+        for(int j = 100; j <= 100000; j*=10){
             semples = j;
             std::cout<<"Order: "<<i<<std::endl;
             std::cout<<"semples: "<<j<<std::endl;
@@ -253,9 +254,14 @@ void testTimes(){
                 stream << "ERROR! " << std::endl;
                 break;
             }
+            free(matricesCPU);
+            free(matricesGPU);
+            free(resultsCPU);
+            free(resultsGPU);
         }
     }
-    writeToFile(stream.str());
+    stream.close();
+    //writeToFile(stream.str());
 }
 
 int main(int argc, char* argv[]) {
