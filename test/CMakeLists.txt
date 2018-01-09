@@ -1,3 +1,5 @@
 set(TEST_FILES  TestMain.cpp)
+find_package(Boost 1.58.0 COMPONENTS system filesystem REQUIRED)
 add_executable(DeterminantsTest ${TEST_FILES})
 target_link_libraries(DeterminantsTest GPUSliderule)
+target_link_libraries(DeterminantsTest rt)
