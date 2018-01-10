@@ -18,13 +18,18 @@
 #include <boost/interprocess/mapped_region.hpp>
 #include <arpa/inet.h>
 
+//string funktions
+#include <boost/algorithm/string/predicate.hpp>
+#include <boost/lexical_cast.hpp>
+#include <boost/algorithm/string.hpp>
+
 using namespace boost::interprocess;
 
 #define MAX_BUF 1024
 
 int sockfd;
 int newsockfd;
-int portno = 51718;
+int portno = 51717;
 int clilen;
 char buffer[256];
 struct sockaddr_in serv_addr, cli_addr;
@@ -183,7 +188,7 @@ struct measure {
 };
 
 
-int order = 5;
+int order = 10;
 int semples = 10;
 
 std::string outfile = "";
@@ -314,7 +319,7 @@ void initSocket() {
     if (bind(sockfd, (struct sockaddr *) &serv_addr,
              sizeof(serv_addr)) < 0)
         error("ERROR on binding");
-    listen(sockfd, 5);
+    listen(sockfd, 50);
     clilen = sizeof(cli_addr);
 
 }
@@ -342,7 +347,7 @@ char *readFromSocket() {
 
 }
 
-void printArray(long *arrayptr) {
+void printSharedMemoryMat(long *arrayptr) {
 
     for (int i = 1; i <= order * order * semples; i++) {
 
@@ -354,91 +359,133 @@ void printArray(long *arrayptr) {
     }
 }
 
+void printSharedMemoryRes(long *arrayptr) {
+
+    for (int i = 0; i < semples; i++) {
+
+        std::cout << arrayptr[i] << "  " << std::endl;
+    }
+}
+
 
 int main(int argc, char *argv[]) {
 
-/*    if (daemon(0,0) < 0){
+/*
+    if (daemon(0, 0) < 0) {
         perror("daemon");
         exit(2);
     }
     //Daemon from here on
-    openlog("gpudeterm", LOG_PID, LOG_DAEMON);*/
+    openlog("gpudeterm", LOG_PID, LOG_DAEMON);
+*/
 
-    /*readArgs(argc,argv);
-    if(outfile == "") {
+    unsigned long sizeMatrixElements = order * order * semples * sizeof(long);
+    unsigned long sizeResultsElements = semples * sizeof(long);
+
+    readArgs(argc, argv);
+    if (outfile == "") {
         matricesCPU = new long[order * order * semples];
         resultsCPU = new long[semples];
-        matricesGPU = new long[order * order * semples];
-        resultsGPU = new long[semples];
-        fillMatrices(matricesGPU, semples, order);
+
         fillMatrices(matricesCPU, semples, order);
+
         Controller controller(order);
         controller.initNumberSamples(semples);
-        std::cout << "GPU execution time:"
-                  << measure<>::execution([&controller]() { controller.calculate(matricesGPU, resultsGPU); })
-                  << std::endl;
-        std::cout << "CPU execution time:"
-                  << measure<>::execution([]() { calculateCPU(); })
-                  << std::endl;
 
-        *//*for(int i = 0; i< semples;i++){
-            std::cout<<"GPU "<<i<<": "<<resultsGPU[i]<<std::endl;
-            std::cout<<"CPU "<<i<<": "<<resultsCPU[i]<<std::endl;
-        }*//*
-        if (compare(resultsCPU, resultsGPU, semples)) {
-            std::cout << "Results equal" << std::endl;
-        } else {
-            std::cout << "ERROR! Results not equal" << std::endl;
+        std::cout << "Controler initialized" << std::endl;
+
+
+        initSocket();
+
+        //Remove shared memory on construction and destruction
+/*        struct shm_remove {
+            shm_remove() {
+                shared_memory_object::remove("MatSharedMemory");
+                shared_memory_object::remove("ResultsSharedMemory");
+            }
+
+            ~shm_remove() {
+                //shared_memory_object::remove("MatSharedMemory");
+                //shared_memory_object::remove("ResultsSharedMemory");
+            }
+        } remover;*/
+
+        //Create a shared memory object for matricies and results
+        shared_memory_object matriciesSHM(open_or_create, "MatSharedMemory", read_write);
+        shared_memory_object resultSHM(open_or_create, "ResultsSharedMemory", read_write);
+
+        //Set size
+        matriciesSHM.truncate(sizeMatrixElements);
+        resultSHM.truncate(sizeResultsElements);
+
+        //Map the whole shared memory in this process
+        mapped_region matRegion(matriciesSHM, read_only);
+        mapped_region resultsRegion(resultSHM, read_write);
+
+        long *matricesptr = (long *) matRegion.get_address();
+
+        long *resultsptr = (long *) resultsRegion.get_address();
+
+        while (true) {
+
+
+            std::cout << "waiting for connection..." << std::endl;
+            newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, (unsigned int *) &clilen);
+            if (newsockfd < 0) {
+                error("ERROR on accept");
+            }
+
+            std::cout << "connected" << std::endl;
+
+
+            char *message = readFromSocket();
+            std::string msg(message);
+
+
+            if (msg.compare("start") == 0) {
+                std::cout << "start" << std::endl;
+
+                printSharedMemoryMat(matricesptr);
+
+                //calculate
+                std::cout << "GPU execution time:"
+                          << measure<>::execution([&controller, &matricesptr, &resultsptr]() {
+                              controller.calculate(matricesptr, resultsptr);
+                          })
+                          << std::endl;
+                std::cout << "CPU execution time:"
+                          << measure<>::execution([]() { calculateCPU(); })
+                          << std::endl;
+                if (compare(resultsCPU, resultsptr, semples)) {
+                    std::cout << "Results equal" << std::endl;
+                } else {
+                    std::cout << "ERROR! Results not equal" << std::endl;
+                }
+
+                printSharedMemoryRes(resultsptr);
+                writeToSocket("finish");
+
+            } else if (boost::starts_with(msg, "order")) {
+
+                std::vector<std::string> results;
+                boost::split(results, msg, [](char c){return c == ' ';});
+                order = stoi(results[results.size() - 1]);
+                std::cout << "change order to " << order << std::endl;
+                controller.initOrder(order);
+
+            } else if (boost::starts_with(msg, "samples")) {
+
+                std::vector<std::string> results;
+                boost::split(results, msg, [](char c){return c == ' ';});
+                semples = stoi(results[results.size() - 1]);
+                std::cout << "change samples to " << semples << std::endl;
+                controller.initNumberSamples(semples);
+                writeToSocket("number of samples changed");
+            }
         }
-    } else{
+    } else {
         testTimes();
-    }*/
-
-    initSocket();
-
-
-    //Create a shared memory object for matricies and results
-    shared_memory_object matriciesSHM(open_or_create, "MatSharedMemory", read_write);
-    shared_memory_object resultSHM(open_or_create, "ResultsSharedMemory", read_write);
-
-    //Map the whole shared memory in this process
-    mapped_region matRegion(matriciesSHM, read_only);
-    mapped_region resultsRegion(resultSHM, read_write);
-
-    long *matricesptr = (long *) matRegion.get_address();
-    printArray(matricesptr);
-
-
-    std::cout << "waiting for connection..." << std::endl;
-    newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, (unsigned int *) &clilen);
-    if (newsockfd < 0) {
-        error("ERROR on accept");
     }
-
-    std::cout << "connected" << std::endl;
-
-
-    char *message = readFromSocket();
-
-    std::string msg(message);
-    std::string msg2 = "start";
-    std::cout << msg.length() << std::endl;
-    std::cout << msg2.length() << std::endl;
-
-    if (msg.compare("start")==0) {
-        std::cout << "start" << std::endl;
-
-        //calculate
-
-        writeToSocket("finish");
-
-    } else if (msg.compare("order")==0) {
-        std::cout << "order" << std::endl;
-    } else if (msg.compare("samples")==0) {
-        std::cout << "samples" << std::endl;
-    }
-
     return 0;
-
 }
 
